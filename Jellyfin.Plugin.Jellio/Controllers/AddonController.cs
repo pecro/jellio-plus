@@ -137,7 +137,11 @@ public class AddonController : ControllerBase
         return meta;
     }
 
-    private OkObjectResult GetStreamsResult(Guid userId, IReadOnlyList<BaseItem> items, string authToken)
+    private OkObjectResult GetStreamsResult(
+        Guid userId,
+        IReadOnlyList<BaseItem> items,
+        string authToken,
+        string? publicBaseUrl = null)
     {
         var user = _userManager.GetUserById(userId);
         if (user == null)
@@ -147,7 +151,15 @@ public class AddonController : ControllerBase
         }
 
         LogBuffer.AddLog($"[Stream] Processing {items.Count} item(s) for user {user.Username}", LogLevel.Info);
-        var baseUrl = GetBaseUrl();
+
+        // Stream URLs previously always used Request.Host, i.e. whatever address
+        // the addon happened to be installed under, ignoring PublicBaseUrl
+        // entirely. Prefer the per-install config, then the server-side plugin
+        // setting, and only then fall back to the request host.
+        var baseUrl = GetBaseUrl(
+            !string.IsNullOrWhiteSpace(publicBaseUrl)
+                ? publicBaseUrl
+                : Plugin.Instance?.Configuration.PublicBaseUrl);
         LogBuffer.AddLog($"[Stream] Base URL: {baseUrl}", LogLevel.Info);
         var dtoOptions = new DtoOptions(true);
         var dtos = _dtoService.GetBaseItemDtos(items, dtoOptions, user);
@@ -423,7 +435,7 @@ public class AddonController : ControllerBase
         }
 
         LogBuffer.AddLog($"[Stream] Found item: {item.Name} (Type: {item.GetType().Name}, Id: {item.Id})", LogLevel.Info);
-        var result = GetStreamsResult(userId, [item], config.AuthToken);
+        var result = GetStreamsResult(userId, [item], config.AuthToken, config.PublicBaseUrl);
         LogBuffer.AddLog($"[Stream] Returning stream result for {item.Name}", LogLevel.Info);
         return result;
     }
@@ -470,7 +482,7 @@ public class AddonController : ControllerBase
             return Ok(new { streams = Array.Empty<object>() });
         }
 
-        return GetStreamsResult(userId, items, config.AuthToken);
+        return GetStreamsResult(userId, items, config.AuthToken, config.PublicBaseUrl);
     }
 
     [HttpGet("stream/series/tt{imdbId}:{seasonNum:int}:{episodeNum:int}.json")]
@@ -557,6 +569,6 @@ public class AddonController : ControllerBase
         }
 
         LogBuffer.AddLog($"[Stream] Returning streams for {episodeItems.Count} episode(s)", LogLevel.Info);
-        return GetStreamsResult(userId, episodeItems, config.AuthToken);
+        return GetStreamsResult(userId, episodeItems, config.AuthToken, config.PublicBaseUrl);
     }
 }
