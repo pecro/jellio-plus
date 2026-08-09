@@ -167,15 +167,47 @@ public class AddonController : ControllerBase
                 return Enumerable.Empty<StreamDto>();
             }
 
-            return dto.MediaSources.Select(source =>
+            return dto.MediaSources.SelectMany(source =>
             {
-                var streamUrl = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&api_key={Uri.EscapeDataString(authToken)}&AudioCodec=aac&TranscodingMaxAudioChannels=2&CopyTimestamps=true";
-                LogBuffer.AddLog($"[Stream] Generated stream for {dto.Name} ({dto.Id}): {source.Name} - URL: {streamUrl}", LogLevel.Info);
-                return new StreamDto
+                var streamBase = $"{baseUrl}/videos/{dto.Id}/stream?mediaSourceId={source.Id}&api_key={Uri.EscapeDataString(authToken)}";
+
+                // Direct play. Jellyfin serves the original file, so the response is
+                // 206-capable with a Content-Length. Offered first because it is the
+                // only mode ExoPlayer-based Stremio clients (Android, Android TV,
+                // Chromecast) can play: a Jellyfin transcode is delivered chunked with
+                // "Accept-Ranges: none" and no length, and those clients respond to an
+                // unseekable body by restarting it from byte 0 rather than playing it.
+                // Desktop Stremio uses libmpv, which tolerates that, which is why the
+                // transcode-only behaviour appeared to work everywhere it was tested.
+                var directUrl = $"{streamBase}&static=true";
+
+                // Transcode to AAC 2.0, the previous sole behaviour. Kept because it is
+                // what makes DTS-HD MA 5.1 audio play on clients that cannot decode it
+                // (see the 1.4.0 changelog). Listed second so it is the deliberate
+                // fallback rather than the default.
+                var transcodeUrl = $"{streamBase}&AudioCodec=aac&TranscodingMaxAudioChannels=2&CopyTimestamps=true";
+
+                LogBuffer.AddLog($"[Stream] Generated streams for {dto.Name} ({dto.Id}): {source.Name} - direct: {directUrl} | transcode: {transcodeUrl}", LogLevel.Info);
+
+                return new[]
                 {
-                    Url = streamUrl,
-                    Name = "Jellio",
-                    Description = source.Name,
+                    new StreamDto
+                    {
+                        Url = directUrl,
+                        Name = "Jellio\nDirect Play",
+                        Description = source.Name,
+
+                        // Binge groups keep Stremio on the same choice for the next
+                        // episode instead of asking again for every one.
+                        BehaviorHints = new BehaviorHintsDto { BingeGroup = "jellio-direct" },
+                    },
+                    new StreamDto
+                    {
+                        Url = transcodeUrl,
+                        Name = "Jellio\nTranscode (AAC 2.0)",
+                        Description = source.Name,
+                        BehaviorHints = new BehaviorHintsDto { BingeGroup = "jellio-transcode" },
+                    },
                 };
             });
         }).ToList();
