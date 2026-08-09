@@ -187,7 +187,9 @@ public class AddonController : ControllerBase
                 // fallback rather than the default.
                 var transcodeUrl = $"{streamBase}&AudioCodec=aac&TranscodingMaxAudioChannels=2&CopyTimestamps=true";
 
-                LogBuffer.AddLog($"[Stream] Generated streams for {dto.Name} ({dto.Id}): {source.Name} - direct: {directUrl} | transcode: {transcodeUrl}", LogLevel.Info);
+                // Redacted: these URLs carry the user's session token as api_key,
+                // and the log buffer is readable by any authenticated user.
+                LogBuffer.AddLog($"[Stream] Generated streams for {dto.Name} ({dto.Id}): {source.Name} - direct: {LogRedaction.Redact(directUrl)} | transcode: {LogRedaction.Redact(transcodeUrl)}", LogLevel.Info);
 
                 return new[]
                 {
